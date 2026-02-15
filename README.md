@@ -1,10 +1,6 @@
-Voici le code complet de ton `README.md`, structuré de manière académique et basé exclusivement sur les fichiers présents dans ton dépôt.
-
-```markdown
 # Efficiently Disentangling CLIP For MultiObject Perception (Implementation)
 
 **Auteurs :** Gautier Cai, Aurélien Chambolle-Solaz, Guillaume Volland  
-**Institution :** Master MIND | Sciences Sorbonne Université
 
 ## Introduction
 
