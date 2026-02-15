@@ -71,6 +71,174 @@ def patch_vit_resolution(model, new_resolution=448):
 
 
 
+
+def visualize_combined_heatmap_standard_clip(clip_model, preprocess, image, class_names, device="cuda"):
+    clip_model.eval()
+    
+    if isinstance(class_names, str):
+        class_names = [class_names]
+    else:
+        class_names = list(class_names)
+        
+    if not class_names:
+        print("Aucune classe valide trouvée.")
+        return
+    img_tensor = preprocess(image).unsqueeze(0).to(device)
+    resolution = clip_model.visual.input_resolution
+    img_display = np.array(image.resize((resolution, resolution)))
+
+    text_prompts = [f"a photo of a {c}" for c in class_names]
+    text_tokens = clip.tokenize(text_prompts).to(device)
+    
+    with torch.no_grad():
+        text_features = clip_model.encode_text(text_tokens)
+        text_norm = F.normalize(text_features, dim=-1)
+
+    with torch.no_grad():
+        visual = clip_model.visual
+        x = img_tensor.type(clip_model.dtype)
+        
+        # Traversée manuelle du Vision Transformer
+        x = visual.conv1(x) 
+        grid_size = x.shape[-1]
+        
+        x = x.reshape(x.shape[0], x.shape[1], -1).permute(0, 2, 1)
+        x = torch.cat([visual.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)
+        x = x + visual.positional_embedding.to(x.dtype)
+        x = visual.ln_pre(x)
+        x = x.permute(1, 0, 2)
+        x = visual.transformer(x)
+        x = x.permute(1, 0, 2)
+        
+        # On extrait les patchs spatiaux en ignorant le [CLS] token (index 0)
+        spatial_features = visual.ln_post(x[:, 1:, :])
+        if visual.proj is not None:
+            spatial_features = spatial_features @ visual.proj
+            
+        img_norm = F.normalize(spatial_features, dim=-1)
+
+    collected_maps = []
+
+    # On récolte les heatmaps brutes de chaque classe
+    for i in range(len(class_names)):
+        with torch.no_grad():
+            target_text_feat = text_norm[i].unsqueeze(0) 
+            attn_map = (img_norm[0] * target_text_feat).sum(dim=-1) 
+            collected_maps.append(attn_map)
+
+    # On prend l'activation maximale par patch parmi toutes les classes
+    with torch.no_grad():
+        combined_attn = torch.stack(collected_maps, dim=0).max(dim=0)[0]
+        
+        attn_grid = combined_attn.view(1, 1, grid_size, grid_size)
+        
+        mask = F.interpolate(attn_grid, size=(resolution, resolution), mode='bilinear', align_corners=False)
+        mask = mask.squeeze().cpu().numpy()
+        
+        # Normalisation 0-1 de la carte fusionnée
+        mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)
+        
+    title_str = ", ".join(class_names)
+        
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5)) # 1, 3, (15, 5)
+    ax[0].imshow(img_display)
+    ax[0].set_title(f"Image Originale")
+    ax[0].axis("off")
+    
+    # ax[1].imshow(mask, cmap="jet") # 2
+    # ax[1].set_title(f"Heatmap Combinée CLIP\n({title_str})")
+    # ax[1].axis("off")
+    
+    ax[1].imshow(img_display) # 3
+    ax[1].imshow(mask, cmap="jet", alpha=0.55)
+    ax[1].set_title(f"Overlay Global CLIP")
+    ax[1].axis("off")
+    fig.suptitle(f"Comparaison image originale et heatmap avec CLIP, classes : {title_str}", fontweight='bold')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def visualize_segmentation_dclip(model, image, class_names, device="cuda"):
+    model.eval()
+    
+    if isinstance(class_names, str):
+        class_names = [class_names]
+        
+    transform = transforms.Compose([
+        transforms.Resize((448, 448), interpolation=transforms.InterpolationMode.BICUBIC),
+        transforms.ToTensor(),
+        transforms.Normalize((0.48145466, 0.4578275, 0.40821073), 
+                             (0.26862954, 0.26130258, 0.27577711)),
+    ])
+    
+    img_tensor = transform(image).unsqueeze(0).to(device)
+    img_display = np.array(image.resize((448, 448)))
+    
+    with torch.no_grad():
+        raw_img_feats = model.image_encoder(img_tensor.type(model.dtype))
+        img_proj = model.image_projector(raw_img_feats)
+        img_norm = F.normalize(img_proj, dim=-1)
+        
+        text_proj = model.text_projector(model.fixed_text_features)
+        text_norm = F.normalize(text_proj, dim=-1)
+
+    K = len(model.classnames)
+    valid_classes = [c for c in class_names if c in model.classnames]
+    
+    if not valid_classes:
+        print("Aucune classe valide trouvée.")
+        return
+
+    collected_maps = []
+
+    # On récolte les heatmaps brutes de chaque classe
+    for class_name in valid_classes:
+        cls_idx = list(model.classnames).index(class_name)
+        pos_idx = K + cls_idx 
+        
+        with torch.no_grad():
+            target_text_feat = text_norm[pos_idx].unsqueeze(0) 
+            attn_map = (img_norm[0] * target_text_feat).sum(dim=-1) 
+            collected_maps.append(attn_map)
+
+    # On prend l'activation maximale par patch parmi toutes les classes
+    with torch.no_grad():
+        combined_attn = torch.stack(collected_maps, dim=0).max(dim=0)[0]
+        
+        grid_size = int(combined_attn.shape[0]**0.5) 
+        attn_grid = combined_attn.view(1, 1, grid_size, grid_size)
+        
+        mask = F.interpolate(attn_grid, size=(448, 448), mode='bilinear', align_corners=False)
+        mask = mask.squeeze().cpu().numpy()
+        
+        # Normalisation 0-1 de la carte fusionnée
+        mask = (mask - mask.min()) / (mask.max() - mask.min() + 1e-8)
+        
+    title_str = ", ".join(valid_classes)
+        
+    fig, ax = plt.subplots(1, 2, figsize=(10, 5)) # 1, 3, (15, 5)
+    ax[0].imshow(img_display)
+    ax[0].set_title("Image Originale")
+    ax[0].axis("off")
+    
+    # ax[1].imshow(mask, cmap="jet")
+    # ax[1].set_title(f"Heatmap Combinée\n({title_str})")
+    # ax[1].axis("off")
+    
+    ax[1].imshow(img_display)
+    ax[1].imshow(mask, cmap="jet", alpha=0.55)
+    ax[1].set_title(f"Overlay Global")
+    ax[1].axis("off")
+    fig.suptitle(f"Comparaison image originale et heatmap avec DCLIP, classes : {title_str}", fontweight='bold')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+
+
+
 def visualize_comparison_clip_dclip(clip_model, preprocess, dclip_model, image, class_names, device="cuda"):
     clip_model.eval()
     dclip_model.eval()
