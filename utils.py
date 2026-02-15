@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+from torch.utils.data import Dataset
 import torch.nn.functional as F
 from clip import clip
 from clip.simple_tokenizer import SimpleTokenizer as _Tokenizer 
