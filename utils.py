@@ -8,6 +8,30 @@ from copy import deepcopy
 
 _tokenizer = _Tokenizer()
 
+class VOCHFDataset(Dataset):
+    def __init__(self, hf_ds, class_names, transform=None):
+        self.ds, self.class_names, self.transform = hf_ds, class_names, transform
+
+    def __len__(self):
+        return len(self.ds)
+
+    def __getitem__(self, idx):
+        item = self.ds[idx]
+        
+        img = item["image"].convert("RGB")
+        if self.transform: 
+            img = self.transform(img)
+
+        vec = torch.zeros(len(self.class_names))
+        
+        label_list = item.get("classes", [])
+        
+        for i in label_list:
+            if i < len(self.class_names):
+                vec[i] = 1.0
+                
+        return img, vec
+
 def patch_vit_resolution(model, new_resolution=448):
     vision = model.visual
     if vision.input_resolution != new_resolution:
