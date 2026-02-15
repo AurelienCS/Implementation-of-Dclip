@@ -19,6 +19,7 @@ Le dépôt est constitué des fichiers suivants :
 * `eval.py` : Fonctions d'évaluation (mAP) et implémentation des fonctions de perte (AsymmetricLossOptimized, MFILossOpti).
 * `utils.py` : Utilitaires pour le chargement de CLIP et le patching de la résolution des ViT pour supporter une entrée en 448px.
 * `Exemple_Exp.ipynb` : Notebook documentant les étapes d'expérimentation et les sorties d'entraînement.
+* `main.py` : Petit code de test avec 6 epochs sur ViT-B/32.
 
 ## Installation
 
