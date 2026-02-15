@@ -7,7 +7,7 @@
 Cette implémentation PyTorch se base sur le papier *"Efficiently Disentangling CLIP for Multi-Object Perception"*. Le projet vise à améliorer les performances du modèle CLIP dans des tâches de reconnaissance multi-objets, où le modèle standard échoue souvent en raison de l'enchevêtrement des caractéristiques visuelles et textuelles dans l'espace latent.
 
 L'approche D-CLIP introduit deux mécanismes de régularisation appliqués à un backbone CLIP figé :
-1. **Mutual Fisher Information (MFI) Loss :** Régule la matrice de similarité pour minimiser les corrélations inter-classes et favoriser le désenchevêtrement sémantique.
+1. **Mutual Feature Information (MFI) Loss :** Régule la matrice de similarité pour minimiser les corrélations inter-classes et favoriser le désenchevêtrement sémantique.
 2. **Asymmetric Loss (ASL) :** Aligne les caractéristiques visuelles avec les représentations textuelles démêlées.
 
 ## Structure du Dépôt
